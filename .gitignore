@@ -1,0 +1,44 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+# executable
+mminfQueue
+# Compiled Dynamic libraries
+*.so
+*.dylib
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+#emacs junk
+.#*
+*#
+*~
+#"compiled" python
+*.pyc
+#executable
+prefAttachModel
+#png of plots
+*.png
+#.txt from plotOutput
+*.txt
+#csv output
+*.csv
+#animation files
+*.avi
+*.mkv
+#tex files
+*.bbl
+*.blg
+*.aux
+*.log
+#folders
+CRecon*
+eigVectRecon*
+a.out
+test.cc
+.nfs*
+*from_here
+*.pdf
