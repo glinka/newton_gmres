@@ -220,7 +220,7 @@ Given that a stopping condition of $\| r_k \| < \epsilon$, we also see that $\| 
   A V_k = V_{k+1} H_k
 \end{align*}
 
-This changes none of the preceeding results with $H$, but can lead to a more efficient algorithm. 
+This changes none of the preceeding results with $H$, but can lead to a faster algorithm. \\
 
 \textbf{Input:} $(x_0, b, A, \epsilon)$.
 \begin{enumerate}
@@ -238,9 +238,9 @@ This changes none of the preceeding results with $H$, but can lead to a more eff
 \end{enumerate}
 \item $x_k = x_0 + V_k y_k$
 \end{enumerate}
-\textbf{Output:} $x_k$
+\textbf{Output:} $x_k$ \\
 
-This algorithm is fairly efficient, but we can do better. For one thing, the columns of $V_k$ may lose their orthogonality as the method progresses. There are two possible solutions, the first is to use a modified Gram-Schmidt procedure in step 2b
+This arrangement is fairly efficient, but we can do better. For one thing, the columns of $V_k$ may lose their orthogonality as the method progresses. There are two possible solutions, the first is to use a modified Gram-Schmidt procedure in step 2b
 
 \begin{align*}
   v_{k+1} &= A v_k \\
