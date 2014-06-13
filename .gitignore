@@ -16,11 +16,13 @@ mminfQueue
 .#*
 *#
 *~
+*.depend
 #"compiled" python
 *.pyc
 #executable
-prefAttachModel
+newtongmres
 #png of plots
+
 *.png
 #.txt from plotOutput
 *.txt
