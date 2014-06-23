@@ -36,10 +36,10 @@
 \author{Alexander Holiday}
 \maketitle
 
-\section{Introduction}
+\section*{Introduction}
 Newton-GMRES is the synthesis of two separate numerical methods: the Newton-Rhapson fixed point method and the GMRES method for the solution of linear equations. We begin with a fairly detailed overview of both of these components.
 
-\subsection{Newton-Rhapson (NR)}
+\section{Newton-Rhapson (NR)}
 
 When numerically solving the equation
 
@@ -62,9 +62,10 @@ x_1 = x_0 - \frac{F(x_0)}{F'(x_0)} \\
 
 with the understanding that $\delta x = x_1 - x_0$. This suggests an iterative procedure for finding the solution to (\ref{eqn:F}), whereby 
 
-\begin{align*}
-x_{k+1} = x_k - \frac{F(x_k)}{F'(x_k)} \\
-\end{align*}
+\begin{align}
+\label{eqn:NRstep}
+x_{k+1} = x_k - \frac{F(x_k)}{F'(x_k)}
+\end{align}
 
 starting from some $x_0$, and stopping, perhaps, when $F(x_k) < \epsilon$ where $\epsilon$ is some pre-specified tolerance. NR is appealing both for its simplicity, and because it can be shown to converge quadratically with a sufficiently good initial guess. We will show this now.
 
@@ -155,7 +156,7 @@ for some $B(\epsilon)$. Thus we simply take the smaller of the two, $\epsilon$ o
 
 Thus, near the fixed point, errors decrease quadratically. I realize this wasn't terribly rigorous, but I believe the main points are correct and could be cleaned up without too much effort. Now that we thoroughly understand the NR method, we turn to an overview of the second piece of the puzzle: a method called the generalized minimum residual.
 
-\subsection{Generalized Minimum Residual (GMRES)}
+\section{Generalized Minimum Residual (GMRES)}
 
 Belonging to the class of Krylov-space methods, GMRES was the successor of conjugate gradient iterations, which was used to solve $Ax=b$ when $A$ was symmetric and positive-definite. In these Kryolv methods, the $k^{th}$ iterate seeks to minimize some error over the affine space
 
@@ -214,7 +215,7 @@ for some nonsingular $H_k \in \mathbb{R}^{k \times k}$. Let us define $r_0 = \be
   &= \argmin \limits_{y \in \mathbb{R}^k} \| \beta e_1 - H y\|_2 \\
 \end{align*}
 
-Given that a stopping condition of $\| r_k \| < \epsilon$, we also see that $\| r_k \|_2 = \| \beta e_1 - H y\|_2$, so that we never actually need to calculate $x$ to find $b - Ax$, saving yet more time. Now let us define a new matrix $H_k \in \mathbb{R}^{k+1 \times k}$, with entries $h_{ij} = (Av_j)^Tv_i$. Then $H_k$ is called upper Hessenberg, as $h_{ij} = 0$ for $i > j + 1$. The Arnoldi process will give us a basis $V_k$ such that
+Given that a stopping condition of $\| r_k \| < \| b \| \epsilon$, we also see that $\| r_k \|_2 = \| \beta e_1 - H y\|_2$, so that we never actually need to calculate $x$ to find $b - Ax$, saving yet more time. Now let us define a new matrix $H_k \in \mathbb{R}^{k+1 \times k}$, with entries $h_{ij} = (Av_j)^Tv_i$. Then $H_k$ is called upper Hessenberg, as $h_{ij} = 0$ for $i > j + 1$. The Arnoldi process will give us a basis $V_k$ such that
 
 \begin{align*}
   A V_k = V_{k+1} H_k
@@ -328,6 +329,33 @@ Again, $R$ is the upper-triangular factor of the QR factorization of $H_k$. It w
 \end{enumerate}
 
 \textbf{Output:} $x_k$
-    
+
+A note on the stopping condition: while one might intuitively suggest terminating the solver when the absolute residual, $r_k = Ax_k - b$ is less than some $\epsilon$, in practice we use a ratio of residuals as the stopping criterion, $\frac{\| r_k \|}{\| r_0 \|} < \epsilon$. Typically $x_0 = 0$ and this reduces to $\| r_k \| < \| b \| \epsilon$, which is what is used in the algorithm presented above. This ratio of errors is used because many of the results governing convergence of these various methods use this criterion in the analyais. We will see this clearly in the next section.
+
+\section{Newton-GMRES}
+
+In the most basic implementation of Newton's method, (\ref{eqn:NRstep}) is solved by computing the inverse of $F'(x_k)$, the Jacobian, perhaps via LU-decomposition. This would be considered an \textit{exact} method, as the Newton step $F'(x_k)^{-1}F(x_k)$ is computed exactly (to numerical precision). However, it may be that we can easily calculate an approximate solution to the linear problem $F'(x_k)s = F(x_k)$: what would this imply for the convergence of the resulting \textit{inexact} Newton's method? It can be shown that if the step $s$ satisfies
+
+\begin{align}
+\label{eqn:INR}
+\| F'(x_n)s_n + F(x_n) \| \leq \eta_n \| F(x_n) \|
+\end{align}
+
+for some \textit{forcing term} $\eta_n$, and if we are sufficiently near the fixed point, then the inexact Newton iteration given by $x_{n+1} = x_n + s_n$ will converge q-linearly to $x^*$. Additionally, if $\eta_n \rightarrow 0$ the iteration converges q-superlinearly, and if $\eta_n \leq K_\eta \| F(x_n) \|^p$ for some $K_\eta > 0$, the convegence is q-superlinear with q-order $1 + p$. Note that (\ref{eqn:INR}) is exactly the stopping condition for GMRES with the system $F'(x_k) s = F(x_k)$ and $\epsilon = \eta_n$. Thus, if we force our iterations strongly, we can achieve superlinear convergence of the Newton iterations. However, this would result in slower convergence of the inner, inexact solvers, which would need to find more accurate solutions to (\ref{eqn:NRstep}). So we must specify some set of terms $\{ \eta_i \}_{i=0}^{N-1}$, perhaps constant. \\
+
+In many applications, we do not, or cannot, compute the exact Jacobian matrix $F'(x_k)$. The most direct solution is to approximate this matrix via finite differences, $F'(x) \approx (\nabla_hF)(x)$, where the $j^{th}$ column of $(\nabla_hF)(x)$ is given by
+
+\begin{align*}
+  (\nabla_hF)(x)_j = \left \{ \begin{array}{l l} \frac{F(x + h\|x \| e_j) - F(x)}{h \|x \|} & \quad x \neq 0 \\ \frac{F(h e_j) - F(x)}{h} & \quad x = 0 \end{array} \right.
+\end{align*}
+
+However, if we examine the GMRES algorithm presented in the previous section, we see that what we really need is not $F'(x)$, but its action on the vector $v_k$. That is, during the constructin of our orthornormal basis of $\mathcal{K}_k$, our first step is to set $v_{k+1} = A v_{k}$, which, in the context of Newton iteration, is $F'(x_k) v_k$, a directional derivative. We will denote the numerical directional derivative of $F(x)$ in the direction $v$ by $D_hF(x, v)$. Unfortunately, while it is true the $\nabla F(x) \bullet v = DF(x, v)$, it is generally the case that $\nabla_h F(x) \bullet v = D_hF(x, v)$. Nonetheless, we can show that if we start close enough to the solution, then replacing $v_{k+1} = F'(x_k) v_k$ with $v_{k+1} = D_hF(x, v_k)$ in our GMRES algorithm will produce steps that satisfy 
+
+\begin{align*}
+  \|F'(x_n) s_n + F(x_n) \| < (\eta + C_G h) \|F(x_n) \|
+\end{align*}
+
+for some $\eta \in (0,1)$ and $h \leq \bar{h}$ and $C_G$. Thus using forward differences has no effect on performance provided we choose our step-sizes $h_n$ small enough. This is computationally advantageous as we calculate only those directional derivatives that are necessary for the determination of our basis, and not the entire Jacobian. Note that this will require us to specify not only a sequence of $\{ \eta_i \}_{i=0}^{N-1}$  but also $\{ h_i \}_{i=0}^{N-1}$ for use with GMRES during the $n^{th}$ Newton step. In summary, instead of taking directional derivatives with respect to unit basis vectors, thus forming the Jacobian and taking matrix-vector products to find $v_{k+1}$, we instead calculate directional derivatives with respect to the Kryolv basis vectors as needed.
+
 
 \end{document}

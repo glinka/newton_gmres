@@ -1,4 +1,4 @@
-SRCS=gmres.cc
+SRCS=main.cc gmres.cc newton.cc test_fns.cc
 OBJECTS=$(SRCS:.cc=.o)
 
 CXX = g++

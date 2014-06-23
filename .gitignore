@@ -16,7 +16,6 @@ mminfQueue
 .#*
 *#
 *~
-*.depend
 #"compiled" python
 *.pyc
 #executable
@@ -44,3 +43,5 @@ test.cc
 .nfs*
 *from_here
 *.pdf
+err
+.depend

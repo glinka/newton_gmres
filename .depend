@@ -1,1 +1,0 @@
-gmres.o: gmres.cc gmres.h linear_solver.h
