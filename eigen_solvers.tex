@@ -1,0 +1,439 @@
+\documentclass[11pt]{article}
+%\renewcommand\thesubsection{\thesection.\alph{subsection}}
+\usepackage{graphicx, subcaption, amsfonts, amsmath, amsthm, empheq, framed, cancel}
+\newtheorem*{thm:jnf}{Jordan normal form for square matrices}
+%% some new commands I have no idea how they work
+\newcommand*\widefbox[1]{\fbox{\hspace{2em}#1\hspace{2em}}}
+\newlength\dlf
+\newcommand\alignedbox[2]{
+  % Argument #1 = before & if there were no box (lhs)
+  % Argument #2 = after & if there were no box (rhs)
+  &  % Alignment sign of the line
+  {
+    \settowidth\dlf{$\displaystyle #1$}  
+    % The width of \dlf is the width of the lhs, with a displaystyle font
+    \addtolength\dlf{\fboxsep+\fboxrule}  
+    % Add to it the distance to the box, and the width of the line of the box
+    \hspace{-\dlf}  
+    % Move everything dlf units to the left, so that & #1 #2 is aligned under #1 & #2
+    \boxed{#1 #2}
+    % Put a box around lhs and rhs
+  }
+}
+%% end new commands I have no idea how they work
+\def\rddots{\cdot^{\cdot^{\cdot}}}
+\newcommand{\K}[1]{\mathcal{K}^{#1}}
+\newcommand{\Kk}{\mathcal{K}^k}
+\newcommand{\Rmn}[2]{\mathbb{R}^{#1 \times #2}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Rn}{\mathbb{R}^{n}}
+\newcommand{\Rnn}{\mathbb{R}^{n \times n}}
+\newcommand{\Forall}{\; \forall \;}
+\newcommand\numberthis{\addtocounter{equation}{1}\tag{\theequation}}
+\DeclareMathOperator*{\argmin}{\arg\!\min}
+\captionsetup{labelformat=empty,labelsep=none}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+\setlength\parindent{0pt}
+\graphicspath{ {./figs/} }
+\pagestyle{plain}
+\begin{document}
+\title{\vspace{-10mm}Eigen-solvers Overview (with an introduction to Krylov subspaces)}
+\author{Alexander Holiday}
+\maketitle
+
+This document is concerned with the numerical solution of the eigenproblem: the determination of eigenpairs $(x \in \mathcal{R}^{n}, \lambda \in \mathcal{R})$ such that $Ax = \lambda x$ for some square matrix $A \in \mathcal{R}^{n \times n}$. The focus will be on a detailed exposition of both the Implicity Shifted QR Method and the Implicitly Restarted Arnoldi Method, with branches into related topics such as the Rayleigh Quotient Iteration and QR decomposition methods.
+
+\section{Preliminaries}
+
+Given some linear operator $A \in \mathcal{R}^{n \times n}$, we call a subspace $\mathcal{S} \subset \Rn$ an invariant subspace of $A$ if for any $v \in \mathcal{S}$, $Av \in \mathcal{S}$. If we find that $AX = XG$ for some $X \in \Rmn{n}{m}$, then $Range(X)$ is an invariant subspace of $A$ as every column of $X$ is mapped by $A$ into some linear combination of other columns of $X$. Furthermore, if the columns of $X$ are linearly independent, they form a basis for this invariant subspace. If we then orthogonalize these vectors via Gram-Schmidt, we find that the resulting $\hat{G} = X^T A X$ is non-singular. We often encounter such a decomposition with $X \in \Rnn$ and nonsingular, yielding $A = X G X^{-1}$. Again, we may orthonormalize $X$ if desired. In either case, we say that $A$ is \textit{similar} to $G$, related by the \textit{similarity transform} $X$. If we denote the spectrum of $A$ by $\mathrm{\sigma}(A)$, then we see that $\mathrm{\sigma}(A) = \mathrm{\sigma}(G)$ as $| G - \lambda I | = | X A X^{-1} - X \lambda I X^{-1} | = |X| | A - \lambda I | | X^{-1} |  = | A - \lambda I |$. \\
+
+Other decompositions of a general square matrix $A$ are possible. It is always possible to construct both a QR decomposition and a Schur decomposition, respectively $A = QR$ and $A = Q U Q^\dagger$. In both cases $Q$ is a unitary matrix ($Q Q^{\dagger} = I)$, and $R$ and $U$ are upper-triangular. In the case of a Schur decomposition, because $U$ is upper-diagonal and is similar to $A$, $\mathrm{\sigma}(A)$ lie on the diagonal of $U$. If $A$ has a set of $n$ linearly independent eigenvectors, then we have an eigen-decomposition $A = V \Lambda V^{-1}$ for which the columns of $V$ are the eigenvectors of $A$, and the matrix $\Lambda$ has the eigenvalues of $A$ on the diagonal and zeros elsewhere. In the special case that $A$ is normal ($A^\dagger A = A A^\dagger$), the eigenvectors will be orthogonal to one another, and with scaling, can form an orthonormal basis for $A$. Thus, in this case, the Schur decomposition becomes the eigen-decomposition. \\
+
+The general strategy employed by numeric eigensolvers is to compute the Schur decomposition of $A$ through some set of orthogonal transformations. Not only is every square matrix guaranteed to have a Schur decomposition, but the fact that we operate on $A$ through orthogonal transformations tends to result in stable algorithms. To see why this might be the case, note that in the solution of $Ax=b$, the ratio of the error in the computed solution to the true solution is given by $\frac{\| A e \| / \| e \|}{\| A b \| / \| b \|}$, and that this cannot exceed $\textrm{cond}(A) = \|A\| \|A^{-1}\|$ where $\|A\| = \max \limits_{\| x \| = 1} \| Ax \|$. So the condition number bounds our relative errors. Now, note that $\|A\| = \| U A \|$ for any unitary matrix $U$ since $\|Ux\| = \| x \|$. Thus, by altering $A$ by unitry/orthogonal transformations, we do not change the conditioning of the problem.
+
+\section{Direct Eigensolvers}
+
+Before we delve into the details of various eigensolvers, it is worth mentioning a few characteristics of the problem at hand and their implications. First, note that any eigenvalue problem is also a polynomial root-finding problem. Indeed, the opposite also holds, as any polynomial can be constructed from the determinant of a corresponding \textit{companion} matrix. Unfortunately, we know that the roots of any polynomial of degree 5 or higher cannot be written as a finite combination of addition, subtraction, multiplication, division, and $k^{th}$ roots. Thus, no modern computer could calculate the exact root of a polynomial of degree greater than four. This implies that no modern computer can compute the exact eigenvalues of a matrix. In turn, we must resolve ourselves to the fact that any eigensolver must operate iteratively, exiting after some error tolerance is reached. \\
+
+As mentioned, the usual process involves the computation of a Schur decomposition, typically of the form $R = Q^\dagger_j ... Q^\dagger_2 Q^\dagger_1 A Q_1 Q_2 ... Q_j$. As we shall see, a typical route is to first compute an \textit{upper-Hessenberg} form of $A$ for which $H_{ij} = 0$ if $i > j + 1$, and then to iteratively produce a triangular form $R$ from this. Note that if $A$ is Hermitian, the upper-Hessenberg matrix will be tri-diagonal. \\
+
+One of the reasons for this indirect computation is that, using a traditional Householder reflector $Q$ to eliminate all but the first component of the first column in matrix $A$, we would subsequently lose all zeros when we post-multiplied by $Q$ to complete the similarity transform. Thus, we must satisfy ourselves with a reflector that elimates all but the top \textbf{two} entries in the first column, and that leaves the first row of $A$ completely unchanged. Then, when post-multiplying, the previously introduced zeros will not be destroyed. An algorithm following these steps is presented below. \\
+
+\begin{framed}
+\textbf{Algorithm - Householder reduction to Hessenberg form:} \\
+\hspace{5mm} for $k = 1, 2, ..., m-2$:
+\begin{align*}
+  &x = A[k+1 : m, k] \\
+  &v_k = \textrm{sign}(x) \| x \| e_1 + x \\
+  &v_k = v_k / \|v_k \| \\
+  &A[k+1:m, k:m] = A[k+1:m, k:m] - 2 v_k v_k^\dagger A[k+1:m, k:m] \\
+  &A[1:m, k+1:m] = A[1:m, k+1:m] - 2 A[1:m, k+1:m] v_k v_k^\dagger \\
+\end{align*}
+\end{framed}
+
+This reduction is computationally $\mathcal{O}(n^3)$, requiring specifically $\frac{10}{3} n^3$ flops in the general case, and $\frac{4}{3} n^3$ in the Hermitian case. \\
+
+If $Q$ and $H$ are the output of our computation, error bounds take the form $QHQ = A + \delta A, \; \frac{\| \delta A \|}{\| A \|} = \mathcal{O}(\epsilon_{\textrm{machine}})$. This shows that this algorithm is indeed backward stable.
+
+\subsection{Rayleigh Iteration}
+
+Given a matrix $A$, the \textit{Rayleigh quotient} of a vector $x$ is
+
+\begin{align*}
+  r(x) = \frac{x^\dagger A x}{x^\dagger x}
+\end{align*}
+
+Thus, if $x$ is an eigenvector of $A$ with eigenvalue $\lambda_x$, $r(x) = \lambda_x$. It is interesting to consider the function $r: \Rn \rightarrow \R$ defined above. The derivative shows
+
+\begin{align*}
+  \frac{\partial r(x)}{\partial x_j} = \frac{2 (Ax)_j}{x^\dagger x} - \frac{x^\dagger A x 2 x_j}{(x^\dagger x)^2} = \frac{2}{x^\dagger x}( Ax - r(x)x)_j
+\end{align*}
+
+Thus, 
+
+\begin{align*}
+  \nabla r(x) = \frac{2}{x^\dagger x}( Ax - r(x)x)
+\end{align*}
+
+and we note that $\nabla r(x) = 0$ if $x$ is an eigenvector. For the sake of discussion, we can restrict $r$ to take only $x$ vectors on the unit sphere $\Rn$. Then the eigenvalues appear as discrete points on this sphere at which $\nabla r = 0$. The fact that the gradient vanishes at the desired value leads to an important result. Consider a vector $x_n$ on the unit sphere, and a nearby eigenvector $x$. Then, through a Taylor expansion, we see that
+
+\begin{align*}
+  r(x_n) \approx r(x) + r'(x) \delta x + \frac{r''(x) (\delta x)^2}{2} \\
+\end{align*}
+
+so $\|r(x_n) - r(x)\| \sim \mathcal{O}(\|(\delta x)^2\|)$, i.e. the Rayleigh quotient is a quadratically accurate estimate of the eigenvalues of $A$. 
+
+\subsection{Power Iteration}
+
+Given a starting vector $v$, $\| v \| = 1$, repeated application of $A$ to $v$ can be expected to converge to the eigenvector corresponding to the largest eigenvalue under certain assumptions.
+
+\begin{framed}
+\textbf{Algorithm - Power Iteration:} \\
+\hspace{5mm} Choose vector $v$ with $\| v \| = 1$ \\
+\hspace{5mm} for $k=1,2,...$ until convergence \\
+\begin{align*}
+  &v_k = A v_{k-1} \\
+  &v_k = v_k / \|v_k \| \\
+  &\lambda_k = r(v_k) \\
+\end{align*}
+\end{framed}
+
+The analysis of this method is fairly straightforward: let the starting vector be given by $v_0 = \sum \limits_i x_i c_i$ where $x_i$ is the $i^{th}$ largest eigenvector of $A$. Then 
+
+\begin{align*}
+  v_k = \sum \limits_i x_i c_i \lambda_i^k \\
+\end{align*}
+
+and
+
+\begin{align*}
+  \|v_k - x_1 \| \sim \mathcal{O}(|\frac{\lambda_2}{\lambda_1}|^k)
+\end{align*}
+
+showing that the power iteration will converge linearly, by order $|\frac{\lambda_2}{\lambda_1}$ at every step. If the top eigenvalues are similar, this would exacerbate the problem. However, there does exist a method to amplify the differences between eigenvalues.
+
+\subsection{Inverse Iteration}
+
+It is a fortunate fact that, given some $\mu \in \R, \not \in \mathrm{\sigma}(A)$, the eigenvectors of $(A - \mu I)^{-1}$ are the same as those of $A$, and the eigenvalues are shifted to $(\lambda_j - \mu)^{-1}$. Thus, if we have some $\mu$ near a certain $\lambda_j$ we'd like to compute, we could perform power iteration on $(A - \mu I)^{-1}$ and find convergence at the new rate of $|\frac{\lambda_1 - \mu}{\lambda_2 - mu}$. \\
+
+Only when we combine this fact with the previously discussed Rayleigh iteration do we arrive at a truly useful algorithm.
+
+\begin{framed}
+\textbf{Algorithm - Rayleigh Quotient Iteration:} \\
+\hspace{5mm} Choose vector $v_0$ with $\| v_0 \| = 1$ \\
+\hspace{5mm} compute $\lambda_0 = r(v_0)$ \\
+\hspace{5mm} for $k=1,2,...$ until convergence \\
+\begin{align*}
+  &v_k = (A - \lambda_{k-1} I)^{-1} v_{k-1} \\
+  &v_k = v_k / \|v_k \| \\
+  &\lambda_k = r(v_k) \\
+\end{align*}
+\end{framed}
+
+This method has the tremendous benefit of converging \textbf{cubically}, a proof of which I will not show. For operation counts, the inversion of the matrix is generally an $\mathcal{O}(n^3)$ operation, leading to a rather unfavorable $\mathcal{O}(kn^3)$ complexity, with $k$ being the unknown number of steps taken till convergence. However, if we operate on a tridiagonal matrix, perhaps the result of a Householder reflection reduction of a normal matrix $A$, then we require only $\mathcal{O}(n)$ per step. And still get cubic convergence.
+
+\subsection{Unshifted QR Algorithm}
+
+In its most basic form, the QR Algorithm is implemented as follows:
+
+\begin{framed}
+\textbf{Algorithm - Basic QR:} \\
+\hspace{5mm} $A_0 = A$ \\
+\hspace{5mm} for $k=0,1,...$ until convergence \\
+\begin{align*}
+  &A_k = Q_k R_k \\
+  &A_{k+1} = R_k Q_k
+\end{align*}
+\end{framed}
+
+Thus, it simply involves repeated QR decomposition of some matrix $A_k$. We see that, in fact, $A_{k+1} = Q^\dagger_k A_k Q_k = Q^\dagger_k...Q^\dagger_1Q^\dagger_0 A_0 Q_0Q_1...Q_k$. It is not immediately clear why such a method should converge to the eigenvectors of $A$. To see this, it is easiest to investigate the closely related Simulatneous Iteration, and to then relate QR to this, more easily understandable method. 
+
+\subsubsection{Simultaneous Iteration}
+
+Power iteration proceeds by the repeated application of $A$ to a single vector $v$. What if the same technique was applied to a collection of $l$ linearly independent vectors $V = \begin{bmatrix} | & | & & | \\ v_1 & v_2 & \hdots & v_p \\ | & | & & | \end{bmatrix}$? The $k^{th}$ iterate would be simply $V_{k+1} = A V_k$. Computing a (rectangular) QR decomposition of the result, we find $Q_k R_k = V_k$ in which $Q_k$ forms an orthogonal basis for $Range(V_k)$. This begs the question: what is $Range(V_k)$? To start, let's assume that our $k$ vectors span some $l-$dimensional eigenspace of $A$. Then $V_0 = MC$ where $M \in \Rmn{n}{l}$ is composed of the corresponding $l$ eigenevectors of $A$, and $C \in \Rmn{l}{p}$ is some matrix of constants. Then $V_k = A^k V_0 = A^k MC = M \Lambda^k C$ where $\Lambda \in \Rmn{l}{l}$ is a diagonal matrix with some subset of eigenvalues. Now, if we rank these eigenvalues by absolute value, $|\lambda_1| \geq | \lambda_2 | \geq ... \geq | \lambda_l |$, we see $V_k = M_u \Lambda_u^k C_u + \mathcal{O}(|\lambda_{p+1} |^k)$, where the $u$ underscore indicates the $p$ vectors in each matrix corresponding to the upper $p$ eigenvalues. Thus, we converge linearly to a $k-dimensional$ eigenspace, with rate $\frac{|\lambda_{p+1}|}{|\lambda_{p}|}$. \\
+
+However, while our iterates do span our desired space of the leading $p$ eigenvectors, in the limit of $k \rightarrow \infty$, each columns will converge to the eigenvector with the largest eigenvalue. Thus, our basis is extremely ill conditioned, and nearly singular. The solution is to orthogonalize at every iteration, instead of only once after applying $A$ $k$ times. This looks like
+
+\begin{framed}
+\textbf{Algorithm - Simultaneous Iteration:} \\
+\hspace{5mm} Choose some $k$ linearly independent, orthogonal vectors to form $Q_0$. \\
+\hspace{5mm} for $k=0,1,...$ until convergence \\
+\begin{align*}
+  &V_{k+1} = A Q_k \\
+  &Q_{k+1}R_{k+1} = V_{k+1}
+\end{align*}
+\end{framed}
+
+As we are repeatedly multiplying by $A$, and creating a new orthogonal basis in the new coordinates, we have that $Range(V_k) = Range(V_0)$. The reorthogonalization ensures our vectors never become so terribly ill conditioned. \\
+
+Now that we understand how Simultaneous Iteration works to find eigenvectors of our system, we can better grasp the QR method by relating the two. In particular, consider Simultaneous Iteration in which $Q_0 = I$ and the QR method with $A_0 = A$. Then we can show that at the $k^{th}$ step, we are in fact calculating
+
+\begin{align*}
+  &A^k = \tilde{Q}_k \tilde{R}_k \\
+  &A_k = \tilde{Q}_k^\dagger A \tilde{Q}_k
+\end{align*}
+
+where $\tilde{Q}_k = Q_0 Q_1 ... Q_k$ and $\tilde{R}_k = R_k...R_1R_0$. We can show this by induction. The base case, $k=0$ is readily established. We have $A^0 = \tilde{R}_0 = \tilde{Q}_0 = I$, and $A_0 = A$. Then for some $k+1$ during Simultaneous Iteration, we have $A^{k+1} = A A^k = A \tilde{Q}_k \tilde{R}_k = \tilde{Q}_{k+1} R_k \tilde{R}_k = \tilde{Q}_{k+1}\tilde{R}_{k+1}$. Looking at the QR method, $A_{k+1} = R_{k+1} Q_{k+1} = Q^\dagger_{k+1} A_k Q_{k+1} = \tilde{Q}^\dagger_{k+1} A \tilde{Q}_{k+1}$. Also $A^{k+1} = (Q_1 R_1)^{k+1} = A \tilde{Q}_k \tilde{R}_k = Q_1 R_1 Q_1 Q_2... Q_kR_k...R_2R_1 = Q_1 A_1 Q_2... = Q_1 Q_2 R_2 Q_2... = ... = Q_1Q_2 ... Q_k A_k R_k...R_2R_1 = \tilde{Q}_{k+1} \tilde{R}_{k+1}$. Put simply, the $k^{th}$ iteration of both the pure QR method and Simultaneous Iteration compute a QR factorization of $A^k$ along with an orthogonal projection of $A$ onto the subspace spanned by $\tilde{Q}_k$. \\
+
+The two equations we have just proved are fundamental to understanding the success of the QR method. Because we are computing an orthogonal basis for powers of $A$, we can expect to recover the eigenvectors based on the convergence properties we discussed for simultaneous iteration. On the other hand, as $Q_k$ converges, the off-diagonal Rayleigh coefficients that compose $A_k$ vanish, while the diagonal elements converge to eigenvalues.
+
+\subsection{Shifted QR Algorithm}
+
+If we continue to restrict ourselves to Hermitian $A$ matrices, we find an interesting property of the QR method: while computing a QR factorization of $A^k$ at each step, we are implicitly also calculating a QR factorization of $A^{-k}$ as well! We get this for free. It is not too hard to see how this arises:
+
+\begin{align*}
+  A^{-k} &= \tilde{R}_k^{-1} \tilde{Q}_k^{-1} \\
+  &= \tilde{Q}_k \tilde{R}_k^{-T}
+\end{align*}
+
+If we introduce the permuation matrix $P = \begin{bmatrix} 0 & 0 & \hdots & 1 \\ 0 & 0 & \rddots & 0 \\ 0 & 1 & & \\ 1 & 0 & \hdots & 0 \end{bmatrix}$ that flips either row or column order, and noting that $P^2 = I$, we can reformulate the previous equaion as
+
+\begin{align*}
+  A^{-k}P = (\tilde{Q}_k P) (P\tilde{R}_k^{-T}P) \\
+\end{align*}
+
+which is, in effect, a QR factorization of $A^{-k}P$ as $\tilde{Q}_k P$ is an orthogonal matrix, and $P\tilde{R}_k^{-T}P$ is upper-triangular. Again, this comes at no extra computational cost: it is inherent in the QR algorthm. Thus, while the first column of $\tilde{Q}_k \tilde{R}_k$ essentially corresponds to power iteration with $A$ on the vector $e_1$, the last column corresponds to power iteration with $A^{-1}$ on $e_n$! We can use this hidden information to construct a better eigensolver. \\
+
+\begin{framed}
+\textbf{Algorithm - Shifted QR:} \\
+\hspace{5mm} Compute a tridiagonalization/upper-Hessenberg form $A = Q_0^T A_0 Q_0$. \\
+\hspace{5mm} for $k=0,1,...$ until convergence
+\begin{align*}
+  &\textrm{Choose a shift } \mathrm{\mu_k}, \textrm{ e.g. } A_{(k) mm} \\
+  &A_k - \mu_k I = Q_{k+1} R_{k+1} \\
+  &A_{k+1} = R_{k+1} Q_{k+1} + \mu_k I \\
+  &\textrm{If any off-diagonal element of } A_{k+1} \textrm{ is close enough to 0, ``lock'' it (set it) to zero}
+\end{align*}
+\end{framed}
+
+We see that the relationship $A_k = \tilde{Q}_k^\dagger A \tilde{Q}_k$ still holds; however, the QR factorization at the $k^th$ step is no longer that of $A^k$, but of $(A-\mu_k I)...(A-\mu_2I)(A-\mu_1I) = \tilde{Q}_k \tilde{R}_k$, that is, of a combination of shifted matrices. Note that, if our shifts are close to the eigenvalues we seek, the \textbf{last} vector of our factorization $\tilde{Q}_k$ converges to the eigenvector, as, again, we are really performing power iterations on the inverse shifted matrix. \\
+
+To choose these shifts, it is natural to seek Rayleigh coefficients in analogy to Rayleigh Quotient Iteration. As we mentioned earlier, these are simply the diagonal elements of $A_k$, and thus they, too, come for free. These are, understandably, called \textit{Rayleigh shifts}. However, while this will provide the cubic convergence we seek, it is not guaranteed to converge at all under certain conditions. For this reason, it is better to use \textit{Wilkinson shifts} which break the symmetry that otherwise causes problems with Rayleigh shifts. If the lower $2\times2$ matrix of $A_k$ is denoted by
+
+\begin{align*}
+  B_k = \begin{bmatrix} \lambda_{m-1} & b_{m-1} \\ b_{m-1} & \lambda_m \end{bmatrix} \\
+\end{align*}
+
+then the Wilkinson shift is $\mu = \lambda_m - \textrm{sign}(\delta)b_{m-1}^2 \bigg{/} \big{(}|\delta| + \sqrt{\delta^2 + b_{m-1}^2}\big{)}$ where $\delta = \frac{\lambda_{m-1} - \lambda_m}{2}$. Wilkinson shifts also provide cubic convergence in some cases, but always achieve at least quadratic convergence. Additionally, they are guaranteed to converge. \\
+
+Let it hereby be known that other algorithms exist.
+
+\section{Iterative Methods}
+
+Often, a complete eigendecomposition is unecessary. DMAPS provides a textbook example of this, as the embedding we seek is defined by the top $k$ eigenpairs. Thus, we turn now towards methods that iteratively find some subset of eigenpairs, hopefully faster and/or stabler than the methods discussed in the previous section. Specifically, we will focus on methods that operate within Krylov subspaces.
+
+\subsection{Krylov Subspaces and Arnoldi Iteration}
+
+Given a matrix $A$ and vector $b$, the $k^{th}$ Krylov subspace, denoted $\K{k}$, is given by
+
+\begin{align*}
+  \K{k} = \textrm{span}(b, Ab, A^2b, \hdots, A^{k-1}b) \\
+\end{align*}
+
+As we learned before, while the subspace may be spanned by these vectors, the Krylov sequence $b, Ab, \hdots, A^{k-1}b$ will form an increasingly ill-conditioned basis with which to express other quantities. Orthogonal bases are always appreciated, and Arnoldi Iteration produces just that. If we denote by $Q_m$ the first $m$ vectors in an upper-Hessenberg reductin of $A$, i.e. if $A = QHQ^\dagger$ then
+
+\begin{align*}
+  Q_m = \begin{bmatrix} | & | & & | \\ q_1 & q_2 & \hdots & q_m \\ | & | & & | \end{bmatrix}
+\end{align*}
+
+and we have the following relationship
+
+\begin{align*}
+  AQ_m = Q_{m+1} \hat{H}_m
+\end{align*}
+
+where $\hat{H}_m \in \Rmn{m+1}{m}$ is an upper-Hessenberg matrix extended by one additional row. Writing out the last column of the product, we find that $Aq_m = \sum \limits_{j=1}^{m+1} h_{mj} q_j $, providing us with the recurrence relation
+
+\begin{align*}
+  h_{m+1, \, m} \, q_{m+1} = Aq_m - \sum \limits_{j=1}^m h_{mj} q_j \\
+\end{align*}
+
+Implementing this gives us \\
+
+\begin{framed}
+  \noindent \textbf{Algorithm - Arnoldi Process:} \\
+  \hspace*{5mm} Input: some vector $b$, black box to compute $Ax$\\
+  \hspace*{5mm} $q_1 = b / \| b \|$\\
+  \hspace*{5mm} for $n=1,...k$ until convergence \\
+  \begin{equation*}
+    \begin{aligned}
+      &v = A q_n \\
+      &\textrm{for i = 1,2,$\hdots$,n} \\
+      &\hspace{5mm} h_{jn} = q^\dagger v \\
+      &\hspace{5mm} v = v - h_{jn} q_j \\
+      &h_{n+1, \, n} = \| v \| \\
+      &q_{n+1} = v / \| v \| \\
+    \end{aligned}
+    \phantom{\hspace{10cm}}
+  \end{equation*}
+\end{framed}
+
+This orthonormal basis gives us a new representatin of the \textit{Krylov matrix} $\K{k} = \begin{bmatrix} | & | & & | \\ b & Ab & \hdots & A^{k-1}b \\ | & | & & | \end{bmatrix}$ as 
+
+\begin{align*}
+  \K{k} = Q_k R_k
+\end{align*}
+
+where $Q_k$ is the output of Arnoldi Iteration and $R_k$ is some triangular matrix. That is, Arnoldi Iteration computes part of the QR factorization of $\K{k}$. We saw that QR decompositions of $A^k V$, where often we took $V = I$, provided us the eigenvalues of $A$, so it seems reasonable to expect something similar of a QR factorization of $\K{k}$ given its structure. The difference is very simple: the QR Algorithm decomposes $A^k = \begin{bmatrix} | & | & & | \\ A^ke_1 & A^ke_2 & \hdots & A^ke_n \\ | & | & & | \end{bmatrix}$ while Arnoldi iteration produces the Q(R) of $\K{k} = \begin{bmatrix} | & | & & | \\ b & Ab & \hdots & A^{k-1}b \\ | & | & & | \end{bmatrix}$. \\
+
+This procedure also generates the upper-Hessenberg matrix $\hat{H}_k$, which also has a nice interpretation. It is the orthogonal projection of $A$ onto the Krylov subspace. The orthogonal projector in this case is $Q Q^\dagger$, so $v_p = Q Q^\dagger Av$ which, for all $v \in \K{k}$, can be reshaped to $Q^\dagger v_p = Q^\dagger A Q Q^\dagger v$ so $y_p = Q^\dagger A Q y$. Now note that $Q_n Q_{n+1} = I$ so that $A Q_n = Q_{n+1} \hat{H}_n$ becomes $Q_n^\dagger A Q_n = H_n$. \\
+
+Recognizing that the diagonal elements of $H_n$ form Rayleigh coefficients of $A$ with respect to $Q_n$, we might suspect a relationship with $A$'s eigenpairs. Indeed, the eigenpairs of $H_k$ are called \textit{Ritz pairs}, and are approximations of the eigenpairs of $A$. 
+
+\subsubsection{Arnoldi Eigensolver and Polynomial Approximation}
+
+What sort of approximations do these Ritz pairs offer, and how exactly do we procure them? It turns out these questions are linked to the field of polynomial approximation. Perhaps this is not ovely surprising, as any vector $v \in \K{k}$ can be expressed as
+
+\begin{align*}
+  v = \sum \limits _{i=0}^{k-1} c_i A^i b
+\end{align*}
+
+that is, as some polynomial of $A$, $q(A) = v = \sum \limits _{i=0}^{k-1} c_i A^i$ times $b$. Interestingly, if we denote the space of all monic $n^{th}$ order polynomials by $\mathcal{P}^n$, then the solution to $\argmin \limits_{p^n \in \mathcal{P}^n} \| p^n(A)b \|$ is the characteristic polynomial of $H_n$, the Hessenberg matrix. Thus, Arnoldi Iteration solves this polynomial minimization problem. We can see this by  noting that our matrix $A$ will have a factorization of the form
+
+\begin{align*}
+  A &= \begin{bmatrix} Q_n & U \end{bmatrix} \begin{bmatrix} H_n & X_1 \\ X_2 & X_3 \end{bmatrix} \begin{bmatrix} Q_n & U \end{bmatrix}^\dagger
+  &= Q H Q^\dagger
+\end{align*}
+
+where $U$ is a set of orthonormal vectors, orthogonal to $\textrm{span}(Q_n)$, with some appropriately sized $X_1$, $X_2$ and $X_3$ to complete the factorization, for which all but the upper-right entry of $X_2$ will be zero. We also see that the minimization problem is equivalent to 
+
+\begin{align*}
+  \argmin \limits_{y \in \Rn{n}} \| A^nb - Q_n y \|
+\end{align*}
+
+which is a fairly standard minimization problem, whose solution is enforced by the orthogonality condition
+
+\begin{align*}
+  Q_n^\dagger(A^nb - Q_n\hat{y}) &= Q_n^\dagger p^n(A)b \\
+  &= Q_n^\dagger Qp^n(H)Q^\dagger b \\
+  &= 0 \\
+\end{align*}
+
+Now, as only the first entry of $Q^\dagger b$ will be nonzero, this condition is enforced by requiring the first column of $p^n(H)$ to be zero, which, in turn, amounts to requiring the first $n$ entries of $p^n(H_n)$ be zero. By the Cayley-Hamilton theory, they will indeed be if $p^n$ is the characteristic polynomial of $H_n$. If there were another polynomial that solved this problem, we would be able to subtract these two answers, and have that some $(n-1)$-degree polynomial was orthogonal to $\K{k}$, which violates our assumption regarding $\textrm{span}(\K{k})$. \\
+
+Why is this connection significant? For one thing, we know that if $n = m$, then choosing the characteristic polynomial of $A$ for $p^m(A)$ will yield a minimum, namely zero. Thus, as our minimium value decreases, we might expect the characteristic polynomial of $H_n$ to resemble that of $A$, and thereby well-approximate its eigenpairs. \\
+
+\subsubsection{Yet another interpretation}
+
+Another definition of Ritz pairs yields a different viewpoint. We call a vector $y \in \K{k}$ and scalar $\theta$ a Ritz pair if
+
+\begin{align*}p
+  \langle w, \, Ay - \theta y \rangle = 0 \quad \forall \quad w \in \K{k}
+\end{align*}
+
+This implies that the residual ``non-eigenvector'' component of $y$ is orthogonal to the Krylov space. The Ritz vector is not, in fact, the eigenvector of $H$, as we can see from the following
+
+\begin{align*}
+  w^\dagger(Ay - y \theta) &= 0 \\
+  &= Q^\dagger A Q Q^\dagger y - Q^\dagger y \theta \\
+  &= W \hat{y} - \theta \hat{y} \\
+  \Rightarrow W \hat{y} &= \theta \hat{y} \\
+\end{align*}
+
+Thus, $y_{Ritz} = Q \hat{y}$ where $\hat{y}$ is an eigenvector of $W = H = Q^\dagger A Q$, the projection of $A$ onto $\K{k}$. We will now try to show the basis of the relationship $AV_k = V_{k+1} \tilde{H}_k$. \\
+
+We start with an orthonormal basis $V_k$ for $K{k}$, and directly examine the product $A V_k$. In general, for some $i < k$, $A v_i \in \K{i+1}$, and so can be written as $A v_i = \sum \limits_{j = 1}^{i+1} h_{ij} v_j$ for some constants $h_{ij}$. This naturally leads to the matrix form $A V_k = V_{k+1} \tilde{H}_k$ where, again $\tilde{H}_k \in \Rmn{k+1}{k}$. We can rewrite this as
+
+\begin{align*}
+  A V_k = V_k H_k + f_k e_1^T
+\end{align*}
+
+with $f_k = h_{k+1, k} v_{k+1}$. Now, if $H_k \hat{y} = \theta \hat{y}$, then 
+
+\begin{align*}
+  A V_k \hat{y} &= \theta V_k \hat{y} + f_k e_1^T  \hat{y} \\
+  \Rightarrow \| A y - \theta y \| &=  \| f_k e_1^T \hat{y} \|
+\end{align*}
+
+Thus, we must look to the ``next'' Krylov subspace to estimate the error in using Ritz pairs from the current one. These approximations can be viewed as exact eigenpairs of a perturbed matrix $A$, which is clear if we rearrange the above relationship into
+
+\begin{align*}
+  (A - f_k v_k^\dagger) V_k = V_k H_k
+\end{align*}
+
+Therefore, the eigenpairs of $H_k$ will be good approximations of the those for $A$ if $\| f_k \| \ll 1$.
+
+\subsubsection{Implicitly Restarted Arnoldi}
+
+While the Arnoldi eigensolver as outlined above has significant advantages over a direct QR solution, it also has significant drawbacks. For starters, it's impossible to know \textit{a priori} how many iterations will be needed to converge to a solution, and thus one cannot know how much storage ought to be set aside for the construction of the Krylov basis. Additionally, as the size of the subspace increases, it becomes harder and harder to maintiain orthogonality of the basis. These issues motivated the devolpment of \textit{restarted} Arnoldi methods, which, after a certain number of steps, somehow reduce the subspace to a manageable size and begin the process again. In the most basic form, a single new vector is produced from the output of $k$ iterations, and this is used as the initial vector for the next round of $k$ more iterations. However, it turns out that one can also restart with a set of $p$ vectors, where we are interested in the first $p$ eigenpairs of $A$. These new vectors are constructed so that they more closely span the subspace of interest, i.e. that spanned by the first $p$ eigenvectors. In words, this process looks something like this.
+
+\begin{framed}
+  \noindent \textbf{Algorithm - Restarted Arnoldi:} \\
+  \hspace*{5mm} Input: some orthonormal basis of for $\K{k+p}$ vectors: $A V_{k+p} = V_{k+p} H_{k+p} + f_{k+p} e_{k+p}^T$ \\
+  \hspace*{5mm} - Perform shifted QR on $H_{k+p}$ to find Ritz pairs $(x_i, \, \theta_i) \quad i=1,2,...,k+p$ \\
+  \hspace*{5mm} - Sort pairs into a wanted set of size $k$, and unwanted of size $p$ \\
+  \hspace*{5mm} - $V_{k}^+ = \phi(A) V_{1:k}$ where $\phi(\lambda) = \prod \limits_{i=1}^k (\lambda - \theta_i)$ is a polynomial filter \\
+  \hspace*{5mm} - Continue Arnoldi iteration for $p$ more steps, repeat process until convergence of desired $(x_i, \theta_i)$ pairs
+\end{framed}
+
+The polynomial $\phi(\lambda)$ is crucial here. Its effect is best understood by considering the case when $v_1 = \sum \limits_{i=1}^{k+p} y_i c_i$ where $(y_i, \lambda_i)$ are eigenpairs of $A$. Then, at the $(k+p)^{th}$ step, we will have computed these eigenpairs exactly, and our filter, applied to $v_1$, will have the effect
+
+\begin{align*}
+  v_1 &= \phi(A) v_1 \\
+  &= \sum \limits_{i=1}^{k+p}  c_i \phi(\lambda_i) y_i \\
+  &= \sum \limits_{i=1}^k c_i \phi(\lambda_i) y_i \\
+\end{align*}
+
+That is, the unwanted components of $v_1$ will be completely eliminated by the application of this polynomial filter. Of course, reality is far from this ideal case, but if we consider applying the same shift/polynomial to $v_1$ at every phase, after $l$ phases, we will have effectively attenuated $\lambda_j$ by a factor of $\bigg( \frac{\phi(\lambda_j)}{\phi(\lambda_1)} \bigg)^l$ where we rank the eigenvalues by decreasing $\phi(\lambda)$. \\
+
+However, we need not explicitly calculate $\phi(A) v_1$, rather, we will implicitly perform this operation through a series of QR decompositions. Given our set of unwanted Ritz values $\{ \mu_j \}_{j=1}^p$, we proceed as follows:
+
+\begin{framed}
+  \noindent \textbf{Algorithm - Implicit Polynomial Filter:} \\
+  \hspace*{5mm} Input: $V_{k+p}$, $H_{k+p}$, $f_{k+p}$, $\mu_j$'s, $Q = I$
+  \hspace*{5mm} for $i=1,2,...,p$
+  \begin{align*}
+    Q_i, R_i &= H_m - \mu_i I \\
+    H_m &= Q_i^\dagger H_m Q_i \\
+    Q &= Q Q_i \\
+  \end{align*}
+  \hspace*{5mm} $V_k = V_{k+p} Q(:, 1:k)$, $H_k = H_m(1:k, 1:k)$
+  \hspace*{5mm} $A V_k = V_k H_k + f_k e_k^T$ with $f_k = V_{k+1} H_{k+p}(k+1, k) + f_{k+p} Q(m,k)$
+\end{framed}
+
+The beauty behind this method is that \textbf{we apply shifts implicitly while maintaining a $k$-dimensional Arnoldi factorization} which now spans a subspace closer to that which we seek. See ``Implicit Application of Polynomial Filters in a K-step Arnoldi Method'' for complete details. \\
+
+Actually, as it's not overly comlex, we'll reproduce the main result here. Given a factorization $A V_m = V_m H_m + f_m e_m^T$ where $m = k+p$, then given a single shift $\mu$, let $QR = H_m - \mu I$. Then we see that 
+
+\begin{align*}
+  &(A - \mu I)V_m =  V_m (H_m - \mu I) + f_m e_m^T \\
+  &\Rightarrow (A - \mu I)V_m - V_m QR = f_m e_m^T \\
+  &\Rightarrow AV_mQ - V_m Q(\mu I + RQ) = f_m e_m^T Q \\
+  &\Rightarrow A V^+ = V^+ H^+ + f^+ e_m^T Q \\
+\end{align*}  
+
+where $V^+ = V_m Q$ and $H^+ = (\mu I + RQ)$. Certainly $H^+$ remains upper-Hessenberg, and $V^+$, as the product of two orthogonal matrices, is also orthogonal and spans the same space. All this to say, we have a new decomposition of $A$, which might not seem overly useful until we examine this procedure's effect on $v_1$ by multiplying by $e_1$
+
+\begin{align*}
+  (A - \mu I) v_1 &= \beta^+ v_1^+ + \cancelto{0}{f_m e_m^T e_1} \\
+\end{align*}
+
+which shows the desired behavior: our new vector has been formed from a polynomial of $A$ designed to dampen out the contributions of unwanted eigenvectors! Applying this iteratively, $p$ times, yields the implicitly restarted Arnoldi method. 
+
+\section{Skipped topics that are also very important}
+
+- Implicit QR \\
+-  +  Francis shifts \\
+- QR deflation and locking \\
+
+\end{document}
