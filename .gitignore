@@ -20,7 +20,9 @@ mminfQueue
 *.pyc
 #executable
 newtongmres
+eigsolver
 #png of plots
+
 
 *.png
 #.txt from plotOutput

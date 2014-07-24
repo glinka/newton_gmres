@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 def threshold(A):
     n = A.shape[0]
@@ -187,6 +187,7 @@ def qr_implicitly_shifted_tridiag(M, tol=1e-11, zero_tol=1e-13, qr_maxiter=10):
 
     I = np.identity(n)
     gersh_rings = np.empty(n)
+    # errors = np.empty(qr_maxiter)
     Q = np.identity(n)
     err = 1
     iters = 0
@@ -226,7 +227,7 @@ def qr_implicitly_shifted_tridiag(M, tol=1e-11, zero_tol=1e-13, qr_maxiter=10):
             for i in range(1, n-3):
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
                 # whole loop could be likely be sped up by   #
-                # manually multiplying matrices, given their #
+                # manually multiplying matrices given their #
                 # tridiagonal structure                      #
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
                 reflect_vect[:] = A[i+1:i+4, i]
@@ -262,14 +263,20 @@ def qr_implicitly_shifted_tridiag(M, tol=1e-11, zero_tol=1e-13, qr_maxiter=10):
                 S = np.dot(Q, S)
                 # print threshold(np.dot(S.T, S)), S.shape
                 return [S, thetas]
-            # error is measured by Gershgorin's rings
-            gersh_rings[0] = np.abs(A[0, 1])
-            gersh_rings[n-1] = np.abs(A[n-1, n-2])
-            for j in range(1, n-1):
-                gersh_rings[j] = np.abs(A[j, j-1]) + np.abs(A[j, j+1])
+        # error is measured by Gershgorin's rings
+        gersh_rings[0] = np.abs(A[0, 1])
+        gersh_rings[n-1] = np.abs(A[n-1, n-2])
+        for j in range(1, n-1):
+            gersh_rings[j] = np.abs(A[j, j-1]) + np.abs(A[j, j+1])
         err = np.max(gersh_rings)
+        # errors[iters] = err
         iters = iters + 1
     if iters == qr_maxiter:
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111)
+        # ax.plot(range(qr_maxiter), np.log(errors))
+        # ax.set_title(str(n) + '-dimensional matrix')
+        # plt.show()
         print 'qr failed to converge with n =', n
     S = Q
     thetas = np.diagonal(A)
@@ -323,7 +330,6 @@ def qr_explicitly_shifted_tridiag(M, tol=1e-11, zero_tol=1e-13, qr_maxiter=10):
                 # print threshold(np.dot(S.T, S)), S.shape
                 return [S, thetas]
             # error is measured by Gershgorin's rings
-            #!!!!!!!!!!!!!!!!!!!! HOW SHOULD YOU ACTUALLY MEASURE ERROR? !!!!!!!!!!!!!!!!!!!!
             gersh_rings[0] = np.abs(A[0, 1])
             gersh_rings[n-1] = np.abs(A[n-1, n-2])
             for j in range(1, n-1):
@@ -407,10 +413,11 @@ if __name__=="__main__":
     k = 4
     p = 8
     # kwargs = {'maxiter': 25}
-    S, thetas, V = implicitly_restarted_arnoldi_symmetric(A, v, k, p, iram_maxiter=100, qr_maxiter=2000)
+    S, thetas, V = implicitly_restarted_arnoldi_symmetric(A, v, k, p, iram_maxiter=100, qr_maxiter=1000)
     eigs = np.linalg.eigvalsh(A)
     si = np.argsort(np.abs(eigs))
     print 'squared eigenvalue error:', np.linalg.norm(eigs[si[-k:]] - thetas)
     print thetas
+    print eigs[si[-k-1:]]
     print A.shape, V.shape, S.shape
     print 'squared first eigenvector error:', np.linalg.norm(np.dot(A, np.dot(V, S[:,-1])) - np.dot(V, S[:,-1])*thetas[-1])
