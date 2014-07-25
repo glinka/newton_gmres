@@ -73,7 +73,7 @@ namespace eigen_solver {
 
   int arnoldi_iter(const Eigen::MatrixXd& A, const Eigen::MatrixXd& V_init, const Eigen::MatrixXd& H_init, const Eigen::VectorXd& f_init, Eigen::MatrixXd& V, Eigen::MatrixXd& H, Eigen::VectorXd& f, const int m, const double zero_tol) {
     const int n = A.rows();
-    const int k_init = V_init.rows();
+    const int k_init = V_init.cols();
 
     V = Eigen::MatrixXd(n, m);
     H = Eigen::MatrixXd::Zero(m, m);
@@ -212,14 +212,14 @@ namespace eigen_solver {
 	Eigen::MatrixXd Qi, Ri;
 	double wilk_shift = std::real(shift);
 	qr_tridiag(Tk - wilk_shift*Eigen::MatrixXd::Identity(n, n), Qi, Ri);
-	S = S*Qi;
+	S *= Qi;
 	Tk = Ri*Qi + wilk_shift*Eigen::MatrixXd::Identity(n, n);
       }
       // check for zeros
       // there is a more sophisticated method
       // of doing this in the true "francis step"
       for(int i = 0; i < n-1; i++) {
-	if(abs(Tk(i,i+1)) < zero_tol) {
+	if(std::abs(Tk(i,i+1)) < zero_tol) {
 	  Tk(i, i+1) = 0;
 	  Tk(i+1, i) = 0;
 	  Eigen::MatrixXd S_top, S_bottom;
@@ -227,26 +227,32 @@ namespace eigen_solver {
 	  qr_impshift_tridiag(Tk.block(0, 0, i+1, i+1), S_top, thetas_top, maxiter, eigen_tol, zero_tol);
 	  qr_impshift_tridiag(Tk.block(i+1, i+1, n-i-1, n-i-1), S_bottom, thetas_bottom, maxiter, eigen_tol, zero_tol);
 	  thetas = Eigen::VectorXd(n);
-	  thetas.head(i+1) = thetas_top;
-	  thetas.tail(n-i-1) = thetas_bottom;
-	  S.block(0, 0, i+1, i+1) *= S_top;
-	  S.block(i+1, i+1, n-i-1, n-i-1) *= S_bottom;
+	  thetas.block(0, 0, i+1, 1) = thetas_top;
+	  thetas.block(i+1, 0, n-i-1, 1) = thetas_bottom;
+	  S.block(0, 0, n, i+1) *= S_top;
+	  S.block(0, i+1, n, n-i-1) *= S_bottom;
 	  return 1;
 	}
       }
-      gersh_rings(0) = abs(Tk(0,1));
-      gersh_rings(n-1) = abs(Tk(n-1,n-2));
+      gersh_rings(0) = fabs(Tk(0,1));
+      gersh_rings(n-1) = fabs(Tk(n-1,n-2));
       for(int i = 1; i < n-1; i++) {
-	gersh_rings(i) = abs(Tk(i, i-1)) + abs(T(i, i+1));
+	gersh_rings(i) = fabs(Tk(i, i-1)) + fabs(T(i, i+1));
       }
       err = gersh_rings.maxCoeff();
       iters++;
     }
-    if(iters == maxiter) {
+    if(iters == maxiter && err > eigen_tol) {
+      std::cout << "********************************" << std::endl;
+      std::cout << "********************************" << std::endl;
       std::cout << "qr failed to converge with n = " << n << std::endl;
+      std::cout << "********************************" << std::endl;
+      std::cout << "********************************" << std::endl;
+      thetas = Tk.diagonal();
       return 0;
     }
     thetas = Tk.diagonal();
+    std::cout << "qr finished via gersh with err = " << err << std::endl;
     return 1;
   }
 
@@ -254,6 +260,65 @@ namespace eigen_solver {
 
 
 
-  int arnoldi_method_imprestart_hermitian(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V_ritz, Eigen::VectorXd& l_ritz, const int k, const int p, const double iram_maxiter, const int qr_maxiter, const double f_tol, const double qr_eigen_tol, const double qr_zero_tol){return 1;}
+  int arnoldi_method_imprestart_hermitian(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V_ritz, Eigen::VectorXd& l_ritz, const int k, const int p, const double iram_maxiter, const int qr_maxiter, const double f_tol, const double qr_eigen_tol, const double qr_zero_tol){
+    const int n = A.rows();
+    const int m = k + p;
+    Eigen::MatrixXd H;
+    Eigen::VectorXd f, f_old;
+    arnoldi_iter(A, v/v.norm(), V_ritz, H, f_old, k);
+    
+    double err = 1;
+    int iters = 0;
+    Eigen::VectorXd e_m = Eigen::VectorXd::Zero(m);
+    e_m(m-1) = 1;
+    std::vector<int> eval_sorted_indices;
+    Eigen::VectorXd thetas;
+    Eigen::MatrixXd V, S;
+
+    while(err > f_tol && iters < iram_maxiter) {
+      
+      arnoldi_iter(A, V_ritz, H.block(0, 0, k, k), f_old, V, H, f, m);
+      qr_impshift_tridiag(H, S, thetas, qr_maxiter);
+      std::vector< std::pair<double, int> > to_sort(m);
+      for(int i = 0; i < m; i++) {
+	to_sort[i] = std::pair<double, int>(std::abs(thetas(i)), i);
+      }
+      eval_sorted_indices = eigen_solver_utils::argsort(to_sort);
+      Eigen::VectorXd errors(k);
+      double fnorm = f.norm();
+      for(int i = 1; i < k+1; i++) {
+	errors(i-1) = fnorm*std::abs(e_m.transpose()*S.col(eval_sorted_indices[m-i]));
+      }
+      err = errors.maxCoeff();
+      if(err > f_tol) {
+	Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(m, m);
+	for(int i = 0; i < p; i++) {
+	  double shift = thetas(eval_sorted_indices[i]);
+	  Eigen::MatrixXd Qi, Ri;
+	  qr_tridiag(H - shift*Eigen::MatrixXd::Identity(m, m), Qi, Ri);
+	  H = Qi.transpose()*H*Qi;
+	  Q = Q*Qi;
+	}
+	double beta = H(k,k-1);
+	double sigma = Q(m-1, k-1);
+	f_old = beta*V.col(k) + sigma*f;
+	V_ritz = V*Q.block(0, 0, m, k);
+	iters++;
+      }
+    }
+
+    if(iters == iram_maxiter) {
+      std::cout << "iram failed to converge" << std::endl;
+      return 0;
+    }
+
+    V_ritz = Eigen::MatrixXd(n, k);
+    l_ritz = Eigen::VectorXd(k);
+    for(int i = 0; i < k; i++) {
+      V_ritz.col(i) = V*S.col(eval_sorted_indices[m-i-1]);
+      l_ritz(i) = thetas(eval_sorted_indices[m-i-1]);
+    }
+    return 1;
+  }
 
 }

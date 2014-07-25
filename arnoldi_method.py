@@ -414,6 +414,8 @@ if __name__=="__main__":
     p = 8
     # kwargs = {'maxiter': 25}
     S, thetas, V = implicitly_restarted_arnoldi_symmetric(A, v, k, p, iram_maxiter=100, qr_maxiter=1000)
+    Vt, H, f = arnoldi_iter(A, v, 10)
+    St, thetast = qr_implicitly_shifted_tridiag(H)
     eigs = np.linalg.eigvalsh(A)
     si = np.argsort(np.abs(eigs))
     print 'squared eigenvalue error:', np.linalg.norm(eigs[si[-k:]] - thetas)
@@ -421,3 +423,6 @@ if __name__=="__main__":
     print eigs[si[-k-1:]]
     print A.shape, V.shape, S.shape
     print 'squared first eigenvector error:', np.linalg.norm(np.dot(A, np.dot(V, S[:,-1])) - np.dot(V, S[:,-1])*thetas[-1])
+    print '******************************'
+    print 'imp-shift qr test'
+    print 'residual in HV - VL:', np.linalg.norm(np.dot(H, St) - np.dot(St, np.diag(thetast)))
