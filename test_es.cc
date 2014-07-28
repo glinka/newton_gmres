@@ -62,13 +62,22 @@ int main(int argc, char** argv) {
   std::cout << "residual in HV - VL: " << (H*S - S*(thetas.asDiagonal())).norm() << std::endl;
   std::cout << "------------------------------" << std::endl;
 
+  Eigen::MatrixXd Vt1, Vt2, Ht1, Ht2;
+  Eigen::VectorXd ft;
+  eigen_solver::arnoldi_iter(A, v, Vt1, Ht1, ft, m);
+  eigen_solver::arnoldi_iter(A, v, Vt2, Ht2, ft, 5);
+  eigen_solver::arnoldi_iter(A, Eigen::MatrixXd(Vt2), Eigen::MatrixXd(Ht2), Eigen::VectorXd(ft), Vt2, Ht2, ft, m);
+  std::cout << "Arnoldi iteration test:" << std::endl;
+  std::cout << "residual in AV1 - AV2: " << (A*Vt1 - A*Vt2).norm() << std::endl;
+  std::cout << "------------------------------" << std::endl;
+
   Eigen::MatrixXd V_r;
   Eigen::VectorXd l_r;
-  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, 5, 10, 25, 25);
-  std::cout << "------------------------------" << std::endl;
+  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, 5, 10, 100, 1000, 1e-11, 1e-11);
   std::cout << "Arnoldi method test:" << std::endl;
   std::cout << "residual in AV - VL: " << (A*V_r - V_r*(l_r.asDiagonal())).norm() << std::endl;
   std::cout << "------------------------------" << std::endl;
   
+
   return 1;
 }

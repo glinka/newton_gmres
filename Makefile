@@ -1,13 +1,13 @@
 ES_SRCS=esmain.cc eigen_solvers.cc
 ES_OBJECTS=$(ES_SRCS:.cc=.o)
-SRC=main.cc gmres.cc newton.cc test_fns.cc
+SRC=test_es.cc gmres.cc newton.cc test_fns.cc
 OBJECTS=$(SRCS:.cc=.o)
 
 CXX = g++
 
-CXXFLAGS = -g -Wall -std=c++0x #-O3
+CXXFLAGS = -g -Wall -std=c++0x -Wno-sign-compare -O3
 
-all: newtongmres eigsolver
+all: newtongmres test_es
 
 %.o: %.c
 	$(CXX) $(CXXFLAGS) -c $<
@@ -15,7 +15,7 @@ all: newtongmres eigsolver
 newtongmres: $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-eigsolver: $(ES_OBJECTS)
+test_es: $(ES_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 depend: .depend

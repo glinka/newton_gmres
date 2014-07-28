@@ -422,7 +422,7 @@ if __name__=="__main__":
     print thetas
     print eigs[si[-k-1:]]
     print A.shape, V.shape, S.shape
-    print 'squared first eigenvector error:', np.linalg.norm(np.dot(A, np.dot(V, S[:,-1])) - np.dot(V, S[:,-1])*thetas[-1])
+    print 'squared error in AV_r - V_r*l_r:', np.linalg.norm(np.dot(A, np.dot(V, S)) - np.dot(np.dot(V, S), np.diag(thetas)))
     print '******************************'
     print 'imp-shift qr test'
     print 'residual in HV - VL:', np.linalg.norm(np.dot(H, St) - np.dot(St, np.diag(thetast)))

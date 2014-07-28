@@ -84,9 +84,9 @@ namespace eigen_solver {
     for(int k = k_init; k < m; k++) {
       double fnorm = f.norm();
       if(fnorm < zero_tol) {
-	std::cout << "arnoldi iteration failed" << std::endl;
-	std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
-	std::cout << "|| f || = " << fnorm << std::endl;
+	// std::cout << "arnoldi iteration failed" << std::endl;
+	// std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
+	// std::cout << "|| f || = " << fnorm << std::endl;
 	return 0;
       }
       V.col(k) = f/fnorm;
@@ -113,9 +113,9 @@ namespace eigen_solver {
     for(int k = 1; k < m; k++) {
       double fnorm = f.norm();
       if(fnorm < zero_tol) {
-	std::cout << "arnoldi iteration failed" << std::endl;
-	std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
-	std::cout << "|| f || = " << fnorm << std::endl;
+	// std::cout << "arnoldi iteration failed" << std::endl;
+	// std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
+	// std::cout << "|| f || = " << fnorm << std::endl;
 	return 0;
       }
       V.col(k) = f/fnorm;
@@ -129,7 +129,7 @@ namespace eigen_solver {
     return 1;
   }
 
-  int qr_impshift_tridiag(const Eigen::MatrixXd& T, Eigen::MatrixXd& S, Eigen::VectorXd& thetas, const int maxiter, const double eigen_tol, const double zero_tol) {
+  int qr_impshift_tridiag(const Eigen::MatrixXd& T, Eigen::MatrixXd& S, Eigen::VectorXd& thetas, const int maxiter, const double eigen_tol, const double zero_tol, const std::string shift_type) {
     const int n = T.rows();
     Eigen::MatrixXd Tk = T;
     
@@ -164,57 +164,67 @@ namespace eigen_solver {
     S = Eigen::MatrixXd::Identity(n, n);
     double err = 1;
     int iters = 0;
-    const double IMAG_TOL = 1e-16;
     while(err > eigen_tol && iters < maxiter) {
-      std::complex<double> shift = eigen_solver_utils::wilk_shift(Tk(n-2,n-2), Tk(n-2,n-1), Tk(n-1,n-1));
+      if(shift_type == "wilkinson") {
+	const double IMAG_TOL = 1e-16;
+	std::complex<double> shift = eigen_solver_utils::wilk_shift(Tk(n-2,n-2), Tk(n-2,n-1), Tk(n-1,n-1));
       
-      if(abs(std::imag(shift)) > IMAG_TOL) {
-	/* 
-	   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	          Still untested
-	   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	*/
-	// speed may be increased by manually multiplying
-	// matrices and vectors given tridiagonal structure
-	// todo: just address the blocks directly through Eigen
-	std::cout << "deploy le francis shift" << std::endl;
-	double realshift = std::real(shift);
-	double s = 2*realshift;
-	double t = std::norm(shift);
-	// reflection vector
-	Eigen::VectorXd refl_v(3);
-	refl_v(0) = Tk(0,0)*Tk(0,0) + Tk(0,1)*Tk(0,1) - s*Tk(0,0) + t;
-	refl_v(1) = Tk(0,1)*(Tk(0,0) + Tk(1,1) - s);
-	refl_v(2) = Tk(0,1)*Tk(2,1);
-	refl_v(0) += copysign(refl_v.norm(), refl_v(0));
-	// reflection matrix
-	Eigen::MatrixXd refl_m = Eigen::MatrixXd::Identity(n,n);
-	refl_m.block(0, 0, 3, 3) -=  2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
-	Tk = refl_m.transpose()*Tk*refl_m;
-	S = refl_m*S;
-	for(int i = 0; i < n-3; i++) {
-	  refl_v = Tk.block(i+1, i, 3, 1);
+	if(abs(std::imag(shift)) > IMAG_TOL) {
+	  /* 
+	     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	     Still untested
+	     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	  */
+	  // speed may be increased by manually multiplying
+	  // matrices and vectors given tridiagonal structure
+	  // todo: just address the blocks directly through Eigen
+	  std::cout << "deploy le francis shift" << std::endl;
+	  double realshift = std::real(shift);
+	  double s = 2*realshift;
+	  double t = std::norm(shift);
+	  // reflection vector
+	  Eigen::VectorXd refl_v(3);
+	  refl_v(0) = Tk(0,0)*Tk(0,0) + Tk(0,1)*Tk(0,1) - s*Tk(0,0) + t;
+	  refl_v(1) = Tk(0,1)*(Tk(0,0) + Tk(1,1) - s);
+	  refl_v(2) = Tk(0,1)*Tk(2,1);
+	  refl_v(0) += copysign(refl_v.norm(), refl_v(0));
+	  // reflection matrix
+	  Eigen::MatrixXd refl_m = Eigen::MatrixXd::Identity(n,n);
+	  refl_m.block(0, 0, 3, 3) -=  2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
+	  Tk = refl_m.transpose()*Tk*refl_m;
+	  S = refl_m*S;
+	  for(int i = 0; i < n-3; i++) {
+	    refl_v = Tk.block(i+1, i, 3, 1);
+	    refl_v(0) += copysign(refl_v.norm(), refl_v(0));
+	    refl_m = Eigen::MatrixXd::Identity(n,n);
+	    refl_m.block(i+1, i+1, 3, 3) -= 2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
+	    Tk = refl_m.transpose()*Tk*refl_m;
+	    S = refl_m*S;
+	  }
+	  refl_v = Tk.block(n-2, n-3, 2, 1);
 	  refl_v(0) += copysign(refl_v.norm(), refl_v(0));
 	  refl_m = Eigen::MatrixXd::Identity(n,n);
-	  refl_m.block(i+1, i+1, 3, 3) -= 2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
+	  refl_m.block(n-2, n-2, 2, 2) -= 2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
 	  Tk = refl_m.transpose()*Tk*refl_m;
 	  S = refl_m*S;
 	}
-	refl_v = Tk.block(n-2, n-3, 2, 1);
-	refl_v(0) += copysign(refl_v.norm(), refl_v(0));
-	refl_m = Eigen::MatrixXd::Identity(n,n);
-	refl_m.block(n-2, n-2, 2, 2) -= 2*refl_v*refl_v.transpose()/refl_v.squaredNorm();
-	Tk = refl_m.transpose()*Tk*refl_m;
-	S = refl_m*S;
+	else {
+	  // wilkinson shift
+	  Eigen::MatrixXd Qi, Ri;
+	  double wilk_shift = std::real(shift);
+	  qr_tridiag(Tk - wilk_shift*Eigen::MatrixXd::Identity(n, n), Qi, Ri);
+	  S *= Qi;
+	  Tk = Ri*Qi + wilk_shift*Eigen::MatrixXd::Identity(n, n);
+	}
       }
-      else {
-	// wilkinson shift
+      else if(shift_type == "eigval") {
+	double eigval_shift = Tk(n-1, n-1);
 	Eigen::MatrixXd Qi, Ri;
-	double wilk_shift = std::real(shift);
-	qr_tridiag(Tk - wilk_shift*Eigen::MatrixXd::Identity(n, n), Qi, Ri);
+	qr_tridiag(Tk - eigval_shift*Eigen::MatrixXd::Identity(n, n), Qi, Ri);
 	S *= Qi;
-	Tk = Ri*Qi + wilk_shift*Eigen::MatrixXd::Identity(n, n);
+	Tk = Ri*Qi + eigval_shift*Eigen::MatrixXd::Identity(n, n);
       }
+
       // check for zeros
       // there is a more sophisticated method
       // of doing this in the true "francis step"
@@ -234,25 +244,23 @@ namespace eigen_solver {
 	  return 1;
 	}
       }
-      gersh_rings(0) = fabs(Tk(0,1));
-      gersh_rings(n-1) = fabs(Tk(n-1,n-2));
+      gersh_rings(0) = std::abs(Tk(0,1));
+      gersh_rings(n-1) = std::abs(Tk(n-1,n-2));
       for(int i = 1; i < n-1; i++) {
-	gersh_rings(i) = fabs(Tk(i, i-1)) + fabs(T(i, i+1));
+	gersh_rings(i) = std::abs(Tk(i, i-1)) + std::abs(T(i, i+1));
       }
       err = gersh_rings.maxCoeff();
       iters++;
     }
     if(iters == maxiter && err > eigen_tol) {
-      std::cout << "********************************" << std::endl;
-      std::cout << "********************************" << std::endl;
-      std::cout << "qr failed to converge with n = " << n << std::endl;
-      std::cout << "********************************" << std::endl;
-      std::cout << "********************************" << std::endl;
+      // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+      // std::cout << "qr failed to converge with n = " << n << std::endl;
+      // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
       thetas = Tk.diagonal();
       return 0;
     }
     thetas = Tk.diagonal();
-    std::cout << "qr finished via gersh with err = " << err << std::endl;
+    // std::cout << "qr finished via gersh with err = " << err << std::endl;
     return 1;
   }
 
@@ -261,7 +269,6 @@ namespace eigen_solver {
 
 
   int arnoldi_method_imprestart_hermitian(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V_ritz, Eigen::VectorXd& l_ritz, const int k, const int p, const double iram_maxiter, const int qr_maxiter, const double f_tol, const double qr_eigen_tol, const double qr_zero_tol){
-    const int n = A.rows();
     const int m = k + p;
     Eigen::MatrixXd H;
     Eigen::VectorXd f, f_old;
@@ -269,31 +276,31 @@ namespace eigen_solver {
     
     double err = 1;
     int iters = 0;
-    Eigen::VectorXd e_m = Eigen::VectorXd::Zero(m);
-    e_m(m-1) = 1;
-    std::vector<int> eval_sorted_indices;
+    std::vector<int> eigval_sorted_indices;
     Eigen::VectorXd thetas;
     Eigen::MatrixXd V, S;
 
+    int qr_success = 0;
     while(err > f_tol && iters < iram_maxiter) {
       
-      arnoldi_iter(A, V_ritz, H.block(0, 0, k, k), f_old, V, H, f, m);
-      qr_impshift_tridiag(H, S, thetas, qr_maxiter);
+      arnoldi_iter(A, V_ritz, Eigen::MatrixXd(H.block(0, 0, k, k)), f_old, V, H, f, m);
+      qr_success = qr_impshift_tridiag(H, S, thetas, qr_maxiter);
       std::vector< std::pair<double, int> > to_sort(m);
       for(int i = 0; i < m; i++) {
 	to_sort[i] = std::pair<double, int>(std::abs(thetas(i)), i);
       }
-      eval_sorted_indices = eigen_solver_utils::argsort(to_sort);
+      eigval_sorted_indices = eigen_solver_utils::argsort(to_sort);
       Eigen::VectorXd errors(k);
       double fnorm = f.norm();
       for(int i = 1; i < k+1; i++) {
-	errors(i-1) = fnorm*std::abs(e_m.transpose()*S.col(eval_sorted_indices[m-i]));
+	// e_m * S[:, sorted[m-i]]
+	errors(i-1) = fnorm*std::abs(S.col(eigval_sorted_indices[m-i])(m-1));
       }
       err = errors.maxCoeff();
       if(err > f_tol) {
 	Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(m, m);
 	for(int i = 0; i < p; i++) {
-	  double shift = thetas(eval_sorted_indices[i]);
+	  double shift = thetas(eigval_sorted_indices[i]);
 	  Eigen::MatrixXd Qi, Ri;
 	  qr_tridiag(H - shift*Eigen::MatrixXd::Identity(m, m), Qi, Ri);
 	  H = Qi.transpose()*H*Qi;
@@ -307,16 +314,20 @@ namespace eigen_solver {
       }
     }
 
+    l_ritz = Eigen::VectorXd(k);
+    for(int i = 1; i < k+1; i++) {
+      V_ritz.col(i-1) = V*S.col(eigval_sorted_indices[m-i]);
+      l_ritz(i-1) = thetas(eigval_sorted_indices[m-i]);
+    }
+    // do some half-assed error checking
     if(iters == iram_maxiter) {
-      std::cout << "iram failed to converge" << std::endl;
+      // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+      // std::cout << "iram failed to converge" << std::endl;
+      // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
       return 0;
     }
-
-    V_ritz = Eigen::MatrixXd(n, k);
-    l_ritz = Eigen::VectorXd(k);
-    for(int i = 0; i < k; i++) {
-      V_ritz.col(i) = V*S.col(eval_sorted_indices[m-i-1]);
-      l_ritz(i) = thetas(eval_sorted_indices[m-i-1]);
+    if(qr_success != 1) {
+      std::cout << "----- Caution: QR failed to converge during most recent iteration -----" << std::endl;
     }
     return 1;
   }
