@@ -1,11 +1,11 @@
-ES_SRCS=esmain.cc eigen_solvers.cc
+ES_SRCS=test_es.cc eigen_solvers.cc
 ES_OBJECTS=$(ES_SRCS:.cc=.o)
-SRC=test_es.cc gmres.cc newton.cc test_fns.cc
+SRCS=main.cc gmres.cc newton.cc test_fns.cc
 OBJECTS=$(SRCS:.cc=.o)
 
 CXX = g++
 
-CXXFLAGS = -g -Wall -std=c++0x -Wno-sign-compare -O3
+CXXFLAGS = -g -Wall -std=c++0x -Wno-sign-compare -O3 -fPIC
 
 all: newtongmres test_es
 

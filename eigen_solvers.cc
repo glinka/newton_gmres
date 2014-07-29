@@ -1,5 +1,7 @@
 #include "eigen_solvers.h"
 #include "eigen_solver_utils.h"
+#include <random>
+#include <chrono>
 #include <iostream>
 
 namespace eigen_solver {
@@ -87,7 +89,17 @@ namespace eigen_solver {
 	// std::cout << "arnoldi iteration failed" << std::endl;
 	// std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
 	// std::cout << "|| f || = " << fnorm << std::endl;
-	return 0;
+	// std::cout << "caution, entering untested code, expect problems" << std::endl;
+	std::cout << "caution, subspace has been truncated to " << k-1 << " dimensions" << std::endl;
+	if(k == 1) {
+	  return k-1;
+	}
+	else {
+	  f = H(k-1, k-2)*V.col(k-1).eval();
+	  V = V.block(0, 0, n, k-1).eval();
+	  H = H.block(0, 0, k-1, k-1).eval();
+	  return k-1;
+	}
       }
       V.col(k) = f/fnorm;
       H(k, k-1) = fnorm;
@@ -97,7 +109,7 @@ namespace eigen_solver {
 	f = f - H(i,k)*V.col(i);
       }
     }
-    return 1;
+    return m;
   }
 
   int arnoldi_iter(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V, Eigen::MatrixXd& H, Eigen::VectorXd& f, const int m, const double zero_tol) {
@@ -114,9 +126,18 @@ namespace eigen_solver {
       double fnorm = f.norm();
       if(fnorm < zero_tol) {
 	// std::cout << "arnoldi iteration failed" << std::endl;
-	// std::cout << "initial vector only spans " << k << " dimensional subspace" << std::endl;
+	// std::cout << "caution, entering untested code, expect problems" << std::endl;
 	// std::cout << "|| f || = " << fnorm << std::endl;
-	return 0;
+	std::cout << "caution, subspace has been truncated to " << k-1 << " dimensions" << std::endl;
+	if(k == 1) {
+	  return k-1;
+	}
+	else {
+	  f = H(k-1, k-2)*V.col(k-1).eval();
+	  V = V.block(0, 0, n, k-1).eval();
+	  H = H.block(0, 0, k-1, k-1).eval();
+	  return k-1;
+	}
       }
       V.col(k) = f/fnorm;
       H(k, k-1) = fnorm;
@@ -126,7 +147,7 @@ namespace eigen_solver {
 	f = f - H(i,k)*V.col(i);
       }
     }
-    return 1;
+    return m;
   }
 
   int qr_impshift_tridiag(const Eigen::MatrixXd& T, Eigen::MatrixXd& S, Eigen::VectorXd& thetas, const int maxiter, const double eigen_tol, const double zero_tol, const std::string shift_type) {
@@ -268,12 +289,38 @@ namespace eigen_solver {
 
 
 
-  int arnoldi_method_imprestart_hermitian(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V_ritz, Eigen::VectorXd& l_ritz, const int k, const int p, const double iram_maxiter, const int qr_maxiter, const double f_tol, const double qr_eigen_tol, const double qr_zero_tol){
-    const int m = k + p;
+  int arnoldi_method_imprestart_hermitian(const Eigen::MatrixXd& A, const Eigen::VectorXd& v, Eigen::MatrixXd& V_ritz, Eigen::VectorXd& l_ritz, const int k, const int p, const int iram_maxiter, const int qr_maxiter, const double f_tol, const double qr_eigen_tol, const double qr_zero_tol){
+    const int n = A.rows();
+    int m = k + p;
     Eigen::MatrixXd H;
     Eigen::VectorXd f, f_old;
-    arnoldi_iter(A, v/v.norm(), V_ritz, H, f_old, k);
-    
+    int arnoldi_dims = arnoldi_iter(A, v/v.norm(), V_ritz, H, f_old, k);
+
+    // pretty questionable method of dealing with the case
+    // when v does not span a k-dimensional subspace
+    const int max_reinits = 10;
+    int reinits = 0;
+    int maxdims = arnoldi_dims;
+    while(arnoldi_dims != k && reinits < max_reinits) {
+      unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+      std::mt19937 mt(seed);
+      double normalization = (double) (mt.max()+1);
+      Eigen::VectorXd V_new(n);
+      for(int i = 0; i < n; i++) {
+	V_new(i) = mt()/normalization;
+      }
+      arnoldi_dims = arnoldi_iter(A, V_new/V_new.norm(), V_ritz, H, f_old, k);
+      if(arnoldi_dims > maxdims) {
+	maxdims = arnoldi_dims;
+      }
+      reinits++;
+    }
+    if(reinits == max_reinits) {
+      std::cout << "inital arnoldi-iteration vector never spanned " << k << "-dimensional subspace" << std::endl;
+      std::cout << "inital arnoldi-iteration vector spanned max of " << maxdims << " dimensions" << std::endl;      
+      return 0;
+    }
+
     double err = 1;
     int iters = 0;
     std::vector<int> eigval_sorted_indices;
@@ -283,7 +330,19 @@ namespace eigen_solver {
     int qr_success = 0;
     while(err > f_tol && iters < iram_maxiter) {
       
-      arnoldi_iter(A, V_ritz, Eigen::MatrixXd(H.block(0, 0, k, k)), f_old, V, H, f, m);
+      arnoldi_dims = arnoldi_iter(A, V_ritz, Eigen::MatrixXd(H.block(0, 0, k, k)), f_old, V, H, f, m);
+
+      // more questionable error handling
+      if(arnoldi_dims < m) {
+	if(arnoldi_dims < k) {
+	  std::cout << "restarting subtracted too many dimensions" << std::endl;
+	  return 0;
+	}
+	else {
+	  m = arnoldi_dims;
+	}
+      }
+
       qr_success = qr_impshift_tridiag(H, S, thetas, qr_maxiter);
       std::vector< std::pair<double, int> > to_sort(m);
       for(int i = 0; i < m; i++) {
@@ -299,17 +358,25 @@ namespace eigen_solver {
       err = errors.maxCoeff();
       if(err > f_tol) {
 	Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(m, m);
-	for(int i = 0; i < p; i++) {
+	for(int i = 0; i < m-k; i++) {
 	  double shift = thetas(eigval_sorted_indices[i]);
 	  Eigen::MatrixXd Qi, Ri;
 	  qr_tridiag(H - shift*Eigen::MatrixXd::Identity(m, m), Qi, Ri);
 	  H = Qi.transpose()*H*Qi;
 	  Q = Q*Qi;
 	}
-	double beta = H(k,k-1);
-	double sigma = Q(m-1, k-1);
-	f_old = beta*V.col(k) + sigma*f;
-	V_ritz = V*Q.block(0, 0, m, k);
+	// if we can resize, do it
+	// otherwise, iterate with same vectors
+	if(m - k > 0) {
+	  double beta = H(k,k-1);
+	  double sigma = Q(m-1, k-1);
+	  f_old = beta*V.col(k) + sigma*f;
+	  V_ritz = V*Q.block(0, 0, m, k);
+	}
+	else {
+	  f_old = f;
+	  V_ritz = V;
+	}
 	iters++;
       }
     }
@@ -328,6 +395,7 @@ namespace eigen_solver {
     }
     if(qr_success != 1) {
       std::cout << "----- Caution: QR failed to converge during most recent iteration -----" << std::endl;
+      return 0;
     }
     return 1;
   }

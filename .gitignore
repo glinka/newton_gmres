@@ -21,6 +21,7 @@ mminfQueue
 #executable
 newtongmres
 eigsolver
+test_es
 #png of plots
 
 
@@ -42,6 +43,7 @@ CRecon*
 eigVectRecon*
 a.out
 test.cc
+*libaes.so*
 .nfs*
 *from_here
 *.pdf

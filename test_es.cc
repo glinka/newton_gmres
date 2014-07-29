@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
 
   Eigen::MatrixXd V_r;
   Eigen::VectorXd l_r;
-  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, 5, 10, 100, 1000, 1e-11, 1e-11);
+  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, 100, 200, 100, 1000, 1e-11, 1e-11);
   std::cout << "Arnoldi method test:" << std::endl;
   std::cout << "residual in AV - VL: " << (A*V_r - V_r*(l_r.asDiagonal())).norm() << std::endl;
   std::cout << "------------------------------" << std::endl;

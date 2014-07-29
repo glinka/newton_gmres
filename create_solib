@@ -1,0 +1,6 @@
+#! /bin/bash
+
+make clean
+make test_es
+g++ -shared -o libaes.so.1.0 eigen_solvers.o
+ln -sf ~/workspace/newton_gmres/libaes.so.1.0 ~/build/lib/libaes.so
