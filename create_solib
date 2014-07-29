@@ -1,6 +1,6 @@
 #! /bin/bash
 
-make clean
-make test_es
+rm eigen_solvers.o
+g++ -c -g -Wall -std=c++0x -Wno-sign-compare -O3 -fPIC -o eigen_solvers.o eigen_solvers.cc
 g++ -shared -o libaes.so.1.0 eigen_solvers.o
 ln -sf ~/workspace/newton_gmres/libaes.so.1.0 ~/build/lib/libaes.so
