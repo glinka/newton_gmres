@@ -321,16 +321,16 @@ namespace eigen_solver {
       return 0;
     }
 
+
     double err = 1;
     int iters = 0;
     std::vector<int> eigval_sorted_indices;
     Eigen::VectorXd thetas;
     Eigen::MatrixXd V, S;
-
     int qr_success = 0;
     while(err > f_tol && iters < iram_maxiter) {
-      
       arnoldi_dims = arnoldi_iter(A, V_ritz, Eigen::MatrixXd(H.block(0, 0, k, k)), f_old, V, H, f, m);
+
 
       // more questionable error handling
       if(arnoldi_dims < m) {
@@ -342,6 +342,7 @@ namespace eigen_solver {
 	  m = arnoldi_dims;
 	}
       }
+
 
       qr_success = qr_impshift_tridiag(H, S, thetas, qr_maxiter);
       std::vector< std::pair<double, int> > to_sort(m);
@@ -366,7 +367,9 @@ namespace eigen_solver {
 	  Q = Q*Qi;
 	}
 	// if we can resize, do it
-	// otherwise, iterate with same vectors
+	// otherwise, perform one last, extended (100*qr_maxiter)
+	// attempt to find eigvals and exit
+	// (continuing to iterate as normal will have no added benefit)
 	if(m - k > 0) {
 	  double beta = H(k,k-1);
 	  double sigma = Q(m-1, k-1);
@@ -374,8 +377,29 @@ namespace eigen_solver {
 	  V_ritz = V*Q.block(0, 0, m, k);
 	}
 	else {
-	  f_old = f;
-	  V_ritz = V;
+	  qr_success = qr_impshift_tridiag(H, S, thetas, 100000*qr_maxiter);
+	  std::vector< std::pair<double, int> > to_sort(m);
+	  for(int i = 0; i < m; i++) {
+	    to_sort[i] = std::pair<double, int>(std::abs(thetas(i)), i);
+	  }
+	  eigval_sorted_indices = eigen_solver_utils::argsort(to_sort);
+	  Eigen::VectorXd errors(k);
+	  double fnorm = f.norm();
+	  for(int i = 1; i < k+1; i++) {
+	    // e_m * S[:, sorted[m-i]]
+	    errors(i-1) = fnorm*std::abs(S.col(eigval_sorted_indices[m-i])(m-1));
+	  }
+	  err = errors.maxCoeff();
+	  l_ritz = Eigen::VectorXd(k);
+	  for(int i = 1; i < k+1; i++) {
+	    V_ritz.col(i-1) = V*S.col(eigval_sorted_indices[m-i]);
+	    l_ritz(i-1) = thetas(eigval_sorted_indices[m-i]);
+	  }
+	  if(err > f_tol) {
+	    std::cout << "iram failed on last desperate attempt of converge" << std::endl;
+	    return 0;
+	  }
+	  return 1;
 	}
 	iters++;
       }
@@ -387,9 +411,9 @@ namespace eigen_solver {
       l_ritz(i-1) = thetas(eigval_sorted_indices[m-i]);
     }
     // do some half-assed error checking
-    if(iters == iram_maxiter) {
+    if(iters == iram_maxiter && err > f_tol) {
       // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
-      // std::cout << "iram failed to converge" << std::endl;
+      std::cout << "iram failed to converge" << std::endl;
       // std::cout << "!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
       return 0;
     }
