@@ -302,6 +302,8 @@ namespace eigen_solver {
     int reinits = 0;
     int maxdims = arnoldi_dims;
     while(arnoldi_dims != k && reinits < max_reinits) {
+      std::cout << "reinit: " << reinits << std::endl;
+
       unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
       std::mt19937 mt(seed);
       double normalization = (double) (mt.max()+1);
@@ -330,7 +332,6 @@ namespace eigen_solver {
     int qr_success = 0;
     while(err > f_tol && iters < iram_maxiter) {
       arnoldi_dims = arnoldi_iter(A, V_ritz, Eigen::MatrixXd(H.block(0, 0, k, k)), f_old, V, H, f, m);
-
 
       // more questionable error handling
       if(arnoldi_dims < m) {
@@ -396,7 +397,7 @@ namespace eigen_solver {
 	    l_ritz(i-1) = thetas(eigval_sorted_indices[m-i]);
 	  }
 	  if(err > f_tol) {
-	    std::cout << "iram failed on last desperate attempt of converge" << std::endl;
+	    std::cout << "iram failed on last desperate attempt to converge" << std::endl;
 	    return 0;
 	  }
 	  return 1;

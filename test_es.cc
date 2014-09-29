@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
   eigen_solver::qr_tridiag(H, Q, R);
   Eigen::MatrixXd S;
   Eigen::VectorXd thetas;
-  const int qr_maxiter = 25;
+  int qr_maxiter = 25;
   eigen_solver::qr_impshift_tridiag(H, S, thetas, qr_maxiter);
 
   std::cout << "------------------------------" << std::endl;
@@ -73,7 +73,9 @@ int main(int argc, char** argv) {
 
   Eigen::MatrixXd V_r;
   Eigen::VectorXd l_r;
-  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, 100, 200, 100, 1000, 1e-11, 1e-11);
+  const int k = 100, p=200, iram_maxiter=100;
+  qr_maxiter=1000;
+  eigen_solver::arnoldi_method_imprestart_hermitian(A, Eigen::VectorXd::Ones(n), V_r, l_r, k, p, iram_maxiter, qr_maxiter, 1e-11, 1e-11);
   std::cout << "Arnoldi method test:" << std::endl;
   std::cout << "residual in AV - VL: " << (A*V_r - V_r*(l_r.asDiagonal())).norm() << std::endl;
   std::cout << "------------------------------" << std::endl;
