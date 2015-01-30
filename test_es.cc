@@ -55,8 +55,6 @@ int main(int argc, char** argv) {
   std::cout << "QR accuracy test:" << std::endl;
   std::cout << "residual in QR - H: " << (Q*R - H).sum() << std::endl;
   std::cout << "residual below diagonal of R: " << below_diag_sum(R) << std::endl;
-  // std::cout << "R: " << R << std::endl;
-  // std::cout << "H: " << H << std::endl;
   std::cout << "------------------------------" << std::endl;
   std::cout << "Imp-shift QR accuracy test:" << std::endl;
   std::cout << "residual in HV - VL: " << (H*S - S*(thetas.asDiagonal())).norm() << std::endl;

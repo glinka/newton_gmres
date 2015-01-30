@@ -1,0 +1,39 @@
+#!/bin/bash
+# generates shared and archive libraries with given version number, creating
+# symlinks and copies in $HOME/lib
+
+# check number of arguments, if zero, exit with error message
+if [ $# -eq 0 ]
+then
+    echo "No version number supplied, exiting"
+    exit
+elif [ $# -eq 1 ]
+then
+    minorversion=0
+elif [ $# -eq 2 ]
+then
+    minorversion="$2"
+else
+    echo "Can only specify two (major and minor) version numbers, exiting"
+    exit
+fi
+
+# GMRES:
+
+# .so
+g++ -shared -Wl,-soname,libnewtongmres.so -o "libnewtongmres.so.$1.$minorversion" newton.o gmres.o
+ln -sf "libnewtongmres.so.$1.$minorversion" libnewtongmres.so
+ln -sf "/home/oakridge/holiday/workspace/newton_gmres/libnewtongmres.so.$1.$minorversion" /home/oakridge/holiday/lib/libnewtongmres.so
+# .a
+ar rvs libnewtongmres.a gmres.o newton.o
+cp libnewtongmres.a /home/oakridge/holiday/lib/
+
+# EIGENSOLVER:
+
+# .so
+g++ -shared -Wl,-soname,libeigensolvers.so -o "libeigensolvers.so.$1.$minorversion" eigen_solvers.o
+ln -sf "libeigensolvers.so.$1.$minorversion" libeigensolvers.so
+ln -sf "/home/oakridge/holiday/workspace/newton_gmres/libeigensolvers.so.$1.$minorversion" /home/oakridge/holiday/lib/libeigensolvers.so
+# .a
+ar rvs libeigensolvers.a eigen_solvers.o
+cp libeigensolvers.a /home/oakridge/holiday/lib/

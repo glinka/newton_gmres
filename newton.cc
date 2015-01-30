@@ -1,11 +1,13 @@
 #include <Eigen/Dense>
 #include "newton.h"
 #include "gmres.h"
+#include "rhs_fn.h"
+#include "jacobian_fn.h"
 #include "iters_exception.h"
 
 Newton::Newton(const double tol_abs, const double tol_rel, const int itermax): tol_abs_(tol_abs), tol_rel_(tol_rel), itermax_(itermax) {}
 
-Eigen::VectorXd Newton::find_zero(Eigen::VectorXd (*F)(const Eigen::VectorXd&), Eigen::MatrixXd (*DF)(const Eigen::VectorXd&), const Eigen::VectorXd& x0, const Linear_Solver& ls) {
+Eigen::VectorXd Newton::find_zero(const RHS_Fn& F, const Jacobian_Fn& DF, const Eigen::VectorXd& x0, const Linear_Solver& ls) const {
   const int n = x0.size();
   double r0 = F(x0).norm();
   double r = r0;
@@ -23,7 +25,7 @@ Eigen::VectorXd Newton::find_zero(Eigen::VectorXd (*F)(const Eigen::VectorXd&), 
   return x;
 }
 
-Eigen::VectorXd Newton::find_zero(Eigen::VectorXd (*F)(const Eigen::VectorXd&), const Eigen::VectorXd& x0, const double dx, const GMRES& ls) {
+Eigen::VectorXd Newton::find_zero(const RHS_Fn& F, const Eigen::VectorXd& x0, const double dx, const GMRES& ls) const {
   const int n = x0.size();
   double r0 = F(x0).norm();
   double r = r0;

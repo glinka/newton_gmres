@@ -1,6 +1,6 @@
 #include <cmath>
-// #include "la_ops.h"
 #include <Eigen/Dense>
+#include "rhs_fn.h"
 #include "gmres.h"
 #include "iters_exception.h"
 
@@ -82,19 +82,19 @@ Eigen::VectorXd GMRES::solve_linear_system(const Eigen::MatrixXd& A, const Eigen
 namespace la {
 
   // for use when x, w \neq 0
-  Eigen::VectorXd v_next(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, Eigen::VectorXd (*F)(const Eigen::VectorXd&)) {
+  Eigen::VectorXd v_next(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, const RHS_Fn& F) {
     return w.norm()*(F(x + h*x.norm()*w/(w.norm())) - F(x))/(h*x.norm());
   }
 
   // for use when x = 0, w \neq 0
-  Eigen::VectorXd v_next_zero(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, Eigen::VectorXd (*F)(const Eigen::VectorXd&)) {
+  Eigen::VectorXd v_next_zero(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, const RHS_Fn& F) {
     return w.norm()*(F(h*w/(w.norm())) - F(x))/h;
   }
 
 }
 
 
-Eigen::VectorXd GMRES::solve_linear_system(Eigen::VectorXd (*F)(const Eigen::VectorXd&), const Eigen::VectorXd& x, const Eigen::VectorXd& x0, const double dx) const {
+Eigen::VectorXd GMRES::solve_linear_system(const RHS_Fn& F, const Eigen::VectorXd& x, const Eigen::VectorXd& x0, const double dx) const {
   Eigen::VectorXd b = -F(x);
   const int n = b.size();
   /*
@@ -104,7 +104,7 @@ Eigen::VectorXd GMRES::solve_linear_system(Eigen::VectorXd (*F)(const Eigen::Vec
   Eigen::MatrixXd V(n, kmax_ + 1);
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(kmax_ + 1, kmax_);
   // V[0] is really x0, and not part of the Krylov subspace
-  Eigen::VectorXd (*v_next)(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, Eigen::VectorXd (*F)(const Eigen::VectorXd&));
+  Eigen::VectorXd (*v_next)(const Eigen::VectorXd& x, const Eigen::VectorXd& w, const double h, const RHS_Fn& F);
   Eigen::VectorXd r;
   // assume w.norm (= V.col(k).norm) \neq 0 in further iterations
   // otherwise we should have ended earlier
